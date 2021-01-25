@@ -1,0 +1,196 @@
+---
+title: "COVID-19 Cyprus Analysis"
+author: "Stavros Oikonomou"
+date: "10/29/2020"
+output: html_document
+---
+
+### Loading the libraries
+
+```{r,warning=FALSE,message=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(GGally)
+library(corrplot)
+library(plotly)
+library(car)
+```
+### Loading the dataset
+
+```{r}
+df <- read.csv("covid3.csv")
+df$date <- mdy(df$date) ### change the date type
+```
+
+### Filling the NA's of 14,15 and 16 of October using the median cases rate of idiotiki protovoulia
+### of October
+
+```{r}
+df$private_cases_rate <- round(df$private_cases/df$new_cases,3) ### idiotiki protovoulia case rate
+private_median_case_rate <- median(df$private_cases_rate[204:229], na.rm=T) ### median case rate for October
+
+### calculating the cases using the October's median
+df[which(is.na(df$private_cases)),]$private_cases <- round(df[which(is.na(df$private_cases)),]$new_cases * private_median_case_rate) 
+
+df[which(is.na(df$private_cases_rate)),]$private_cases_rate[22:24]<- round(df$private_cases[217:219]/df$new_cases[217:219],3)
+
+df[which(is.na(df$private_cases_rate)),]$private_cases_rate[1:21] <- as.numeric("0.000")
+```
+
+```{r}
+df$total_private_tests <- cumsum(df$private_test)
+df$public_tests <- df$new_tests-df$private_test
+df$public_cases <- df$new_cases - df$private_cases
+```
+
+```{r}
+df$pos_rate_total <- round(df$new_cases/df$new_tests , 3)
+df$pos_rate_private <- round(df$private_cases/df$private_test,3)
+df$pos_rate_public <- round(df$public_cases/df$public_tests,3)
+df$private_perc <- round(df$private_test/df$new_tests,3)
+```
+
+
+
+```{r}
+ggplotly(ggplot(df, aes(x=date, y= total_cases,colour="Total"))+ geom_line(size=1) + ylab("Number of Cases") + xlab("Days") + ggtitle("Total cases") + geom_line(aes(x=date, y= cumsum(public_cases),colour="Public")) + theme_bw() + geom_line(aes(x=date, y= cumsum(private_cases),colour="Private")) + scale_color_discrete(name = "Test type", labels = c(Total="Red", Public="Blue", Private="Green")))
+  
+```
+
+```{r}
+ggplot(df[18:229,], aes(x=date, y=cumsum(private_tests))) + geom_line(colour="Red", size=1) + geom_line(aes(x=date, y=cumsum(public_tests)), colour="Blue", size=1) + ylab("Number of tests") + ggtitle("Total number of tests") + theme_bw()
+```
+
+```{r}
+ggplotly(ggplot(df, aes(x=date,y=new_cases)) + geom_line(colour="Red", size=1) + ylab("Number of cases") + ggtitle("New total cases") + theme_bw())
+```
+
+```{r}
+ggplotly(ggplot(df, aes(x=date,y=private_cases,colour="Private")) + geom_line( size=1) + ylab("Number of cases") + ggtitle("New cases") + theme_bw() + geom_line(aes(x=date,y=public_cases, colour="Public"), size=1)+ scale_color_discrete(name = "Test type", labels = c(Private="Red", Public="Blue")))
+```
+
+```{r}
+ggplotly(ggplot(df, aes(x=date,y=private_tests)) + geom_line(aes(colour="Private"), size=1) + ylab("Number of cases") + ggtitle("Daily number of tests") + theme_bw() + geom_line(aes(x=date,y=new_tests, colour="Total"), size=1) + scale_color_discrete(name = "Test type", labels = c(Private="Red", Total="Blue")))
+```
+
+```{r}
+ggplotly(ggplot(df[50:229,]) + geom_line(aes(x=date, y=pos_rate_total,colour="Total"), size=1) + geom_line(aes(x=date,y=pos_rate_public,colour="Public"), size=1) + ggtitle("Positive rate per type") + geom_line(aes(x=date,y=pos_rate_private,colour="Private"), size=1) + theme_bw() + ylab("Positive rate")+ scale_color_discrete(name = "Test type", labels = c(Total="Red", Public="Blue", Private="Green")))
+```
+
+
+```{r,warning=FALSE,message=FALSE}
+ggplotly(ggplot(df, aes(x=date,y=private_perc))+geom_line(size=0.7, colour="Orange")+theme_bw()+geom_smooth(span=0.1)+ylab("Percentage")+ ggtitle("Private test percentage"))
+```
+
+```{r,warning=FALSE,message=FALSE}
+ylim.prim <- c(0,5000)
+ylim.sec <- c(0,0.08)
+b <- diff(ylim.prim)/diff(ylim.sec)
+a <- b*(ylim.prim[1] - ylim.sec[1])
+ggplot(df, aes(x=date, y=new_tests)) + geom_bar(stat="identity", colour="white", fill="Red") + geom_bar(aes(x=date,y=new_cases), stat="identity",colour="blue", fill="blue", size=1) + theme_minimal() + geom_line(aes(y= b*pos_rate_total), size=1, colour="black") + scale_y_continuous(name = "Number of cases", 
+    sec.axis = sec_axis(~ (. - a)/b, name = "Positive tests"))
+```
+
+
+```{r}
+cor_cov <- cor(df[,2:16],use = "complete.obs")
+corrplot(cor_cov,order = "hclust")
+
+corrplot(cor_cov, method = "color",type = "upper", order = "hclust",addCoef.col = "red",diag = FALSE)
+```
+
+```{r}
+plot(df[50:229,]$pos_rate_private,df[50:229,]$pos_rate_total)
+model <- lm( pos_rate_private~pos_rate_total, data=df[50:229,])
+summary(model)
+```
+
+
+```{r}
+symptomatic <- read.csv("symptomatic.csv")
+symptomatic$date <- ymd(symptomatic$date)
+```
+
+```{r}
+ggplotly(ggplot(symptomatic, aes(x=date, y=sym_cases))+ geom_bar(stat="identity", fill="blue", colour="white") + theme_minimal() + ylab("N. of cases") + ggtitle("Cases with symptoms. Date of first day of symptoms appeared"))
+```
+
+```{r}
+merged <- merge(df, symptomatic, all.x=T, by="date")
+```
+
+````{r}
+ggplotly(ggplot(merged, aes(x=date,y=private_cases, colour="Private"))+ geom_line(size=1)+ geom_line(aes(x=date,y=sym_cases,colour="Symptomatic"), size=1)+ theme_minimal() + scale_color_discrete(name = "Test type", labels = c(Private="Red", Symptomatic="Blue"))+ ylab("N. of cases"))
+```
+
+```{r}
+model2 <- lm(new_cases~new_tests+private_cases+private_tests+sym_cases + private_cases * sym_cases, data=merged)
+summary(model2)
+```
+
+```{r}
+### VAF
+predicted <- predict(model2, merged[,c(6:8,18)])
+(1-var(merged$new_cases[20:227]-predicted[20:227])/var(merged$new_cases[20:227]))*100
+```
+
+
+```{r}
+### VIF 
+vif1 <- vif(model2)
+vif1
+barplot(vif1, main = "VIF Values", col = "steelblue",cex.names=0.7)
+```
+
+```{r}
+ggplot(merged, aes(x=sym_cases,y=new_cases)) + geom_point() + theme_minimal() + xlab("Symptomatic cases") + ylab("New cases")
+```
+
+```{r}
+model_sn <- lm(new_cases~sym_cases, data=merged)
+summary(model_sn)
+```
+
+```{r}
+ggplot(merged, aes(x=sym_cases, y=private_cases)) + geom_point() + theme_minimal() + xlab("Symptomatic cases") + ylab("Private cases")
+```
+
+```{r}
+model_sp <- lm(private_cases~sym_cases, data=merged)
+summary(model_sp)
+```
+
+```{r,warning=FALSE,message=FALSE}
+ggplot(merged, aes(x=private_cases, y=new_cases)) + geom_point() + theme_minimal() + xlab("Private cases") + ylab("New cases") + geom_smooth()
+```
+
+```{r}
+model_pn <- lm(new_cases~private_cases, data=merged)
+summary(model_pn)
+```
+
+```{r,warning=FALSE,message=FALSE}
+ggplotly(ggplot(merged, aes(x=sym_cases, y=private_cases, colour="Private")) + geom_point( size=3, alpha=0.5) + theme_minimal() + xlab("Symptomatic cases") + ylab("Cases") + geom_point(aes(x=sym_cases, y=new_cases, colour="Daily"), size=3, alpha=0.5) + geom_smooth(aes(x=sym_cases, y=private_cases), fill="Blue", alpha=0.2) + geom_smooth(aes(x=sym_cases, y=new_cases), fill="Red", alpha=0.2) + scale_color_discrete(name = "Test type", labels = c(Private="Red", Daily="Blue")))
+```
+
+```{r}
+corr2 <- cor(merged[,c(7,9,18)],use = "complete.obs")
+corrplot(corr2, method = "color",type = "upper", order = "hclust",addCoef.col = "red",diag = FALSE)
+```
+
+```{r}
+model3 <- lm(new_cases~new_tests + private_tests, data=merged, na.action = na.omit)
+summary(model3)
+vif(model3)
+```
+```{r}
+model4 <-lm(new_cases~private_tests + public_tests, data=merged, na.action = na.omit)
+summary(model4)
+vif(model4)
+```
+
+```
+
+
+
